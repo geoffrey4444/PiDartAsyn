@@ -7,11 +7,7 @@
 
 import SwiftUI
 
-struct ContentView: View {
-    @State var hits: Int = 0
-    @State var thrown: Int = 0
-    @State var toThrow: Int = 1
-    @State var toBeThrown: Int = 0
+actor DartThrower {
     func throwBatchOfDarts(batch_to_throw: Int) async -> Int {
         var batch_thrown = 0
         var batch_hits = 0
@@ -26,13 +22,24 @@ struct ContentView: View {
         return batch_hits
     }
 
-    func throwDarts() async {
+    func throwDarts(toThrow: Int) async -> (Int, Int) {
         let to_be_thrown_this_batch = Int(pow(Double(10), Double(toThrow)))
-        toBeThrown += to_be_thrown_this_batch
         let batch_hits = await throwBatchOfDarts(batch_to_throw: to_be_thrown_this_batch)
-        hits += batch_hits
-        thrown += to_be_thrown_this_batch
+        return (batch_hits, to_be_thrown_this_batch)
     }
+}
+
+struct ContentView: View {
+    @State var hits: Int = 0
+    @State var thrown: Int = 0
+    @State var toThrow: Int = 1
+    @State var toBeThrown: Int = 0
+
+    @MainActor func updateAfterThrowingBatch(hitsInBatch: Int, thrownInBatch: Int) async {
+        hits += hitsInBatch
+        thrown += thrownInBatch
+    }
+
     var body: some View {
         VStack {
             Text("\(hits) hits")
@@ -44,7 +51,14 @@ struct ContentView: View {
             }
             Button("Throw darts") {
                 Task {
-                    await throwDarts()
+                    toBeThrown += Int(pow(Double(10), Double(toThrow)))
+
+                    // Throw darts: runs on a background thread
+                    let thrower = DartThrower()
+                    let (hits_this_batch, thrown_this_batch) = await thrower.throwDarts(toThrow: toThrow)
+
+                    // Update UI: runs on main thread (Main Actor)
+                    await updateAfterThrowingBatch(hitsInBatch: hits_this_batch, thrownInBatch: thrown_this_batch)
                 }
             }
             ProgressView(value: toBeThrown == 0 ? 0.0 : Double(thrown)/Double(toBeThrown)).padding()
